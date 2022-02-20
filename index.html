@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SAO:MD .plist Viewer</title>
+    <script src="https://goessner.net/download/prj/jsonxml/xml2json.js"></script>
+</head>
+<body style="background-color: rgb(127,255,0)">
+<div id="step-1">
+    <span>step 1: upload image</span>
+    <input type="file" id="image-input" accept=".png" />
+</div>
+<div id="step-2" hidden>
+    <span>step 2: upload .plist</span>
+    <input type="file" id="file-input" accept=".plist" />
+</div>
+<div id="step-3" hidden>
+    <div id="file-info"></div>
+    <select id="keys" onchange="handleSelectChange()"></select><br />
+    <canvas id="canvas-focus"></canvas><br />
+    <a id="download-link" href="" download=""></a>
+    <canvas id="canvas"></canvas>
+</div>
+</body>
+<script>
+    const keys_data = {};
+    let image_file = "";
+    document.getElementById('file-input').addEventListener('change', readFile, false);
+    document.getElementById('image-input').addEventListener('change', readImage, false);
+    function readImage(e) {
+        let file = e.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        // READ FILE
+        let reader = new FileReader();
+        reader.onloadend = function(e) {
+            image_file = reader.result;
+            document.getElementById("step-1").hidden = true;
+            document.getElementById("step-2").hidden = false;
+        };
+        reader.readAsDataURL(file);
+    }
+    function readFile(e) {
+        let file = e.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        // READ FILE
+        let reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById("step-2").hidden = true;
+            document.getElementById("step-3").hidden = false;
+
+            let contents = e.target.result;
+
+            const json = JSON.parse(xml2json(parseXml(contents), "\t"));
+            const keys = json["plist"]["dict"]["dict"][0]["key"];
+            let keys_html = "";
+            for (let i = 0 ; i < keys.length ; i++) {
+                const key = keys[i];
+                const dict = json["plist"]["dict"]["dict"][0]["dict"][i];
+                keys_html += `<option value="${key}">${key}</option>`;
+                keys_data[key] = {
+                    frame: JSON.parse(dict["string"][0].replaceAll("{", "[").replaceAll("}", "]")),
+                    offset: JSON.parse(dict["string"][1].replaceAll("{", "[").replaceAll("}", "]")),
+                    rotated: false,
+                    sourceSize: JSON.parse(dict["string"][2].replaceAll("{", "[").replaceAll("}", "]")),
+                };
+            }
+            document.getElementById("keys").innerHTML = keys_html;
+            const texture = json["plist"]["dict"]["dict"][2]["integer"];
+            const width = parseInt(texture[0]);
+            const height = parseInt(texture[1]);
+            document.getElementById("canvas").width = width;
+            document.getElementById("canvas").height = height;
+            document.getElementById("file-info").innerText = `${keys.length} keys\n`
+                + `${width}x${height}\n`
+                + `${json["plist"]["dict"]["dict"][1]["string"][0]}`;
+            handleSelectChange();
+        };
+        reader.readAsText(file);
+    }
+    function parseXml(xml) {
+        var dom = null;
+        if (window.DOMParser) {
+            try {
+                dom = (new DOMParser()).parseFromString(xml, "text/xml");
+            }
+            catch (e) { dom = null; }
+        }
+        else if (window.ActiveXObject) {
+            try {
+                dom = new ActiveXObject('Microsoft.XMLDOM');
+                dom.async = false;
+                if (!dom.loadXML(xml)) // parse error ..
+
+                    window.alert(dom.parseError.reason + dom.parseError.srcText);
+            }
+            catch (e) { dom = null; }
+        }
+        else
+            alert("cannot parse xml string!");
+        return dom;
+    }
+    function handleSelectChange() {
+        const selected = document.getElementById("keys");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // clear canvas
+
+        const canvas_focus = document.getElementById("canvas-focus");
+        const ctx_focus = canvas_focus.getContext("2d");
+        ctx_focus.clearRect(0, 0, canvas_focus.width, canvas_focus.height); // clear canvas
+
+        const image = new Image();
+        image.onload = function() {
+            ctx.drawImage(image, 0, 0);
+
+            const data = keys_data[selected.value];
+            const x = data["frame"][0][0];
+            const y = data["frame"][0][1];
+            const width = data["frame"][1][0];
+            const height = data["frame"][1][1];
+            ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+            ctx.fillRect(x, y, width, height);
+
+            canvas_focus.width = width;
+            canvas_focus.height = height;
+            ctx_focus.drawImage(image, x, y, width, height, 0, 0, width, height);
+            const download_link = document.getElementById("download-link");
+            download_link.href = canvas_focus.toDataURL();
+            download_link.innerText = selected.value;
+            download_link.download = /[^/]*$/.exec(selected.value)[0];
+        };
+        image.src = image_file;
+    }
+</script>
+</html>
